@@ -15,13 +15,39 @@
         #viewer-container { flex-grow: 1; position: relative; }
         #placeholder { display: flex; justify-content: center; align-items: center; height: 100%; color: #666; }
         replay-web-page { width: 100%; height: 100%; display: none; }
+        #not-available {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            z-index: 999;
+        }
+        #not-available h2 { margin: 0 0 10px; color: #333; }
+        #not-available p { margin: 0 0 20px; color: #666; }
+        #not-available button {
+            background: #007aff;
+            color: #fff;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        #not-available button:hover { background: #005ecb; }
     </style>
 </head>
 <body>
     <div id="sidebar">
         <h2>Device UI Simulators</h2>
         <ul class="menu-list">
-            <li class="menu-item" 
+            <li class="menu-item"
                 data-src="https://remotevideosource-glitch.github.io/WEBUI/sharp-bp-71c31.wacz"
                 data-url="http://10.1.16.241/main.html">Sharp BP-71C31</li>
         </ul>
@@ -32,11 +58,26 @@
             id="sim-viewer"
             embed="replayonly">
         </replay-web-page>
+        <div id="not-available">
+            <h2>Page Not Available</h2>
+            <p>This page was not captured in the simulator archive.</p>
+            <button onclick="dismissNotAvailable()">Go Back</button>
+        </div>
     </div>
     <script>
         const menuItems = document.querySelectorAll('.menu-item');
         const viewer = document.getElementById('sim-viewer');
         const placeholder = document.getElementById('placeholder');
+        const notAvailable = document.getElementById('not-available');
+
+        function dismissNotAvailable() {
+            notAvailable.style.display = 'none';
+            // Return to the starting page of the active machine
+            const activeItem = document.querySelector('.menu-item.active');
+            if (activeItem) {
+                viewer.setAttribute('url', activeItem.getAttribute('data-url'));
+            }
+        }
 
         menuItems.forEach(item => {
             item.addEventListener('click', () => {
@@ -45,14 +86,22 @@
                 const waczUrl = item.getAttribute('data-src');
                 const startUrl = item.getAttribute('data-url');
                 placeholder.style.display = 'none';
+                notAvailable.style.display = 'none';
                 viewer.style.display = 'block';
                 viewer.setAttribute('source', waczUrl);
                 viewer.setAttribute('url', startUrl);
             });
         });
 
-        viewer.addEventListener('warc-copy-failed', (e) => e.preventDefault());
-        viewer.addEventListener('render-failed', (e) => e.preventDefault());
+        viewer.addEventListener('warc-copy-failed', (e) => {
+            e.preventDefault();
+            notAvailable.style.display = 'block';
+        });
+
+        viewer.addEventListener('render-failed', (e) => {
+            e.preventDefault();
+            notAvailable.style.display = 'block';
+        });
     </script>
 </body>
 </html>
