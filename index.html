@@ -74,6 +74,53 @@
         let lastGoodUrl = '';
         let isReverting = false;
 
+        // Runtime hook injection into the Replay Web Page component internals
+        customElements.whenDefined('replay-web-page').then(() => {
+            const ReplayWebPageClass = customElements.get('replay-web-page');
+            const originalOnLoad = ReplayWebPageClass.prototype.onLoad;
+
+            ReplayWebPageClass.prototype.onLoad = function(event) {
+                // Execute component's original rendering setup code first
+                originalOnLoad.call(this, event);
+
+                try {
+                    const iframe = event.target;
+                    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+
+                    if (iframeDoc) {
+                        const scanForErrors = () => {
+                            if (isReverting) return;
+                            
+                            const text = iframeDoc.body ? iframeDoc.body.innerText : '';
+                            if (text.includes('Archived Page Not Found') || 
+                                text.includes('not found in this archive') || 
+                                text.includes('Sorry, this page was not found')) {
+                                console.warn("Observer intercepted internal 404 error page state.");
+                                revertToSafeState();
+                            }
+                        };
+
+                        // Check instantly upon loading the wrapper frame
+                        scanForErrors();
+
+                        // Use a MutationObserver to watch the Service Worker manipulate the internal document DOM asynchronously
+                        const observer = new MutationObserver(() => {
+                            scanForErrors();
+                        });
+
+                        observer.observe(iframeDoc.documentElement, {
+                            childList: true,
+                            subtree: true
+                        });
+                    }
+                } catch (e) {
+                    // Fallback to safety if strict inner cross-origin security is encountered
+                    revertToSafeState();
+                }
+            };
+            console.log("Internal components successfully patched with structural error protection.");
+        });
+
         function dismissNotAvailable() {
             notAvailable.style.display = 'none';
             revertToSafeState();
@@ -117,15 +164,13 @@
             const iframe = shadow.querySelector('iframe');
             if (!iframe) return;
 
-            // --- CHECK 1: Test Frame Body Content (Isolated) ---
+            // --- CHECK 1: Back-up Frame Body Content Scan ---
             let bodyText = '';
             try {
                 if (iframe.contentDocument && iframe.contentDocument.body) {
                     bodyText = iframe.contentDocument.body.innerText || '';
                 }
             } catch (e) {
-                // If the browser blocks us from reading the text via CORS, it means 
-                // the viewer broke out into an unmapped error page domain.
                 revertToSafeState();
                 return;
             }
@@ -137,14 +182,13 @@
                 return;
             }
 
-            // --- CHECK 2: Test Frame Live Navigation URL (Isolated) ---
+            // --- CHECK 2: Frame Navigation Query Param Scan ---
             let currentIframeUrl = '';
             try {
                 if (iframe.contentWindow) {
                     currentIframeUrl = iframe.contentWindow.location.href || '';
                 }
             } catch (e) {
-                // Treat URL security block as an unmapped navigation breakout
                 revertToSafeState();
                 return;
             }
@@ -155,7 +199,7 @@
             }
         }
 
-        // Keep a tight loop (100ms) to intercept and wipe the screen before it renders visually
+        // High frequency polling loop safety valve
         setInterval(checkForNotFound, 100);
 
         function attachViewerListeners(element) {
