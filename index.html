@@ -186,41 +186,6 @@
                 viewer.setAttribute('url', startUrl);
             });
         });
-    <script>
-  window.addEventListener('DOMContentLoaded', () => {
-    const viewer = document.getElementById('sim-viewer');
-    
-    // 1. Wait for ReplayWeb.page to finish initialization
-    viewer.addEventListener('replay-ready', () => {
-      
-      // 2. Reach past the Shadow DOM to get the internal replay frame
-      const iframe = viewer.shadowRoot.querySelector('iframe');
-      if (!iframe) return;
-
-      // Helper function to attach event rules inside the archive
-      const attachFormBlocker = () => {
-        try {
-          const innerDoc = iframe.contentDocument || iframe.contentWindow.document;
-          if (!innerDoc) return;
-
-          // 3. Catch all submit events inside the archive before they redirect
-          innerDoc.addEventListener('submit', (event) => {
-            // Stops the "Archived Page Not Found" screen from loading
-            event.preventDefault(); 
-            console.log('Blocked an unmapped form submission safely.');
-          }, true); // 'true' forces it to catch the event early
-
-        } catch (e) {
-          console.warn("Cross-origin restriction or frame load error:", e);
-        }
-      };
-
-      // 4. Run blocker on initial load, and rerun if user clicks a menu that changes pages
-      iframe.addEventListener('load', attachFormBlocker);
-      attachFormBlocker(); 
-    });
-  });
-</script>
-
+    </script>
 </body>
 </html>
