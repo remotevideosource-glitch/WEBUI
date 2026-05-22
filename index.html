@@ -15,8 +15,6 @@
         #viewer-container { flex-grow: 1; position: relative; }
         #placeholder { display: flex; justify-content: center; align-items: center; height: 100%; color: #666; }
         replay-web-page { width: 100%; height: 100%; display: none; }
-        
-        /* Keeping the fallback modal just in case, but hiding it by default */
         #not-available {
             display: none;
             position: absolute;
@@ -73,7 +71,7 @@
         const notAvailable = document.getElementById('not-available');
 
         let lastGoodUrl = '';
-        let isReverting = false; // Prevents infinite loops if the revert gets stuck
+        let isReverting = false;
 
         function dismissNotAvailable() {
             notAvailable.style.display = 'none';
@@ -86,7 +84,6 @@
             
             console.warn("Reverting to safe URL:", lastGoodUrl);
             
-            // Hard-reset the viewer URL to force it to reload the last good state
             viewer.removeAttribute('url');
             setTimeout(() => {
                 if (lastGoodUrl) {
@@ -95,41 +92,53 @@
                     const activeItem = document.querySelector('.menu-item.active');
                     if (activeItem) viewer.setAttribute('url', activeItem.getAttribute('data-url'));
                 }
-                
                 setTimeout(() => { isReverting = false; }, 500);
             }, 50);
         }
 
-        function checkForNotFound() {
+        function checkForNotFoundAndInterceptForm() {
             if (isReverting) return;
 
             try {
                 const shadow = viewer.shadowRoot;
                 if (!shadow) return;
                 const iframe = shadow.querySelector('iframe');
-                if (!iframe) return;
+                if (!iframe || !iframe.contentDocument) return;
 
-                // 1. Check the active internal URL for the POST error
+                const innerDoc = iframe.contentDocument;
+
+                // --- NEW TRAP: Intercept form submits inside the iframe before they happen ---
+                if (!innerDoc._hasSubmitInterceptor) {
+                    innerDoc.addEventListener('submit', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        console.warn("Form submission blocked instantly.");
+                        revertToSafeState();
+                    }, true);
+                    innerDoc._hasSubmitInterceptor = true;
+                }
+
+                // Check URL for POST methods
                 const currentIframeUrl = iframe.contentWindow ? iframe.contentWindow.location.href : '';
                 if (currentIframeUrl.includes('__wb_method=POST')) {
                     revertToSafeState();
                     return;
                 }
 
-                // 2. Check the text content just in case the URL didn't update but the DOM did
-                if (iframe.contentDocument && iframe.contentDocument.body) {
-                    const bodyText = iframe.contentDocument.body.innerText || '';
+                // Check text for backend 404 errors
+                if (innerDoc.body) {
+                    const bodyText = innerDoc.body.innerText || '';
                     if (bodyText.includes('Archived Page Not Found')) {
                         revertToSafeState();
                     }
                 }
             } catch(e) {
-                // Cross-origin errors can happen here during transitions, we ignore them
+                // Cross-origin boundaries might temporarily throw errors during transitions
             }
         }
 
-        // Fast interval to catch the flash quickly
-        setInterval(checkForNotFound, 100);
+        // Loop fast (100ms) to ensure we catch form clicks instantly
+        setInterval(checkForNotFoundAndInterceptForm, 100);
 
         menuItems.forEach(item => {
             item.addEventListener('click', () => {
@@ -154,17 +163,14 @@
             if (isReverting) return;
             
             if (e.detail && e.detail.url) {
-                // Instantly block if the viewer component registers the POST change
                 if (e.detail.url.includes('__wb_method=POST')) {
                     revertToSafeState();
                 } else {
-                    // It's a safe URL, save it
                     lastGoodUrl = e.detail.url;
                 }
             }
         });
 
-        // Suppress visual errors emitted by the viewer
         viewer.addEventListener('warc-copy-failed', (e) => { e.preventDefault(); revertToSafeState(); });
         viewer.addEventListener('render-failed', (e) => { e.preventDefault(); revertToSafeState(); });
         viewer.addEventListener('error', (e) => { e.preventDefault(); revertToSafeState(); });
