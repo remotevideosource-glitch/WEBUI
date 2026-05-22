@@ -1,4 +1,4 @@
-  <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -74,12 +74,12 @@
         let lastGoodUrl = '';
         let isReverting = false;
 
-        // Clean deep-scanning engine that searches inside the component shadow layer directly
+        // Continuous state scan engine running every 100ms
         setInterval(() => {
             if (isReverting || !viewer) return;
 
             try {
-                // Safeguard check to read the element's shadowRoot safely
+                // Safeguard inspection into the web component's shadow DOM root
                 const shadow = viewer.shadowRoot;
                 if (!shadow) return;
 
@@ -91,22 +91,24 @@
 
                 if (frameDoc && frameDoc.body) {
                     const bodyText = frameDoc.body.innerText || '';
+                    const htmlContent = frameDoc.body.innerHTML || '';
                     const currentUrl = frameWin.location.href || '';
 
-                    // Intercept any unmapped state signatures
+                    // Intercept any unmapped service worker injections or raw POST breakouts
                     if (bodyText.includes('Archived Page Not Found') || 
                         bodyText.includes('not found in this archive') || 
+                        htmlContent.includes('__wb_method=POST') ||
                         currentUrl.includes('__wb_method=POST')) {
                         
-                        console.warn("Direct scanner caught internal 404/POST state breakout.");
+                        console.warn("State engine caught unmapped routing error inside container scope.");
                         revertToSafeState();
                     }
                 }
             } catch (err) {
-                // If a cross-origin tracking error hits, auto-revert out of the broken route
+                // Auto-revert safely if browser sandbox barriers (cross-origin exceptions) are triggered
                 revertToSafeState();
             }
-        }, 150);
+        }, 100);
 
         function dismissNotAvailable() {
             notAvailable.style.display = 'none';
@@ -123,12 +125,12 @@
             const waczUrl = activeItem.getAttribute('data-src');
             const targetUrl = lastGoodUrl || activeItem.getAttribute('data-url');
 
-            console.warn("Rebuilding clean simulator interface layout target:", targetUrl);
+            console.warn("Purging locked frame. Restoring pristine environment view:", targetUrl);
             
-            // Flush the current element out of the active rendering context
+            // Instantly delete the frozen custom element component from the live DOM
             viewer.remove();
 
-            // Spawn a fresh node instance
+            // Rebuild a clean component instance from scratch to refresh the reader thread pipeline
             const newViewer = document.createElement('replay-web-page');
             newViewer.id = 'sim-viewer';
             newViewer.setAttribute('embed', 'replayonly');
@@ -151,7 +153,7 @@
                     if (targetUrl.includes('__wb_method=POST')) {
                         setTimeout(revertToSafeState, 0);
                     } else {
-                        // Keep track of our verified location baseline
+                        // Store known good working URL path to return to
                         lastGoodUrl = targetUrl;
                     }
                 }
@@ -184,4 +186,4 @@
         });
     </script>
 </body>
-</html>     
+</html>
