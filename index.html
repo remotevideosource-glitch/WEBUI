@@ -1,6 +1,128 @@
-Archived Page Not Found
-Sorry, this page was not found in this archive:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Technician Web UI Simulator Hub</title>
+    <script src="./ui.js"></script>
+    <style>
+        body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; background-color: #f5f5f7; }
+        #sidebar { width: 280px; background-color: #1e1e24; color: #fff; display: flex; flex-direction: column; }
+        #sidebar h2 { padding: 20px; margin: 0; font-size: 1.2rem; background-color: #141418; }
+        .menu-item { padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #2e2e38; }
+        .menu-item:hover { background-color: #2a2a35; }
+        .menu-item.active { background-color: #007aff; }
+        #viewer-container { flex-grow: 1; position: relative; }
+        #placeholder { display: flex; justify-content: center; align-items: center; height: 100%; color: #666; }
+        replay-web-page { width: 100%; height: 100%; display: none; }
+        #not-available {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            z-index: 999;
+        }
+        #not-available h2 { margin: 0 0 10px; color: #333; }
+        #not-available p { margin: 0 0 20px; color: #666; }
+        #not-available button {
+            background: #007aff;
+            color: #fff;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        #not-available button:hover { background: #005ecb; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>Device UI Simulators</h2>
+        <ul class="menu-list">
+            <li class="menu-item"
+                data-src="https://remotevideosource-glitch.github.io/WEBUI/sharp-bp-71c31.wacz"
+                data-url="http://10.1.16.241/main.html">Sharp BP-71C31</li>
+        </ul>
+    </div>
+    <div id="viewer-container">
+        <div id="placeholder"><h3>Select a machine UI to begin.</h3></div>
+        <replay-web-page
+            id="sim-viewer"
+            embed="replayonly">
+        </replay-web-page>
+        <div id="not-available">
+            <h2>Page Not Available</h2>
+            <p>This page was not captured in the simulator archive.</p>
+            <button onclick="dismissNotAvailable()">Go Back</button>
+        </div>
+    </div>
+    <script>
+        const menuItems = document.querySelectorAll('.menu-item');
+        const viewer = document.getElementById('sim-viewer');
+        const placeholder = document.getElementById('placeholder');
+        const notAvailable = document.getElementById('not-available');
 
-http://10.1.16.241/home_basic.html?__wb_method=POST&sys_operation_home2Webchange=&action=updatebtn&ordinate=0&token1=0009CFE85DCA866D39EBF5984EB61984C9EC07C2412C2194C22026051918425464F82A55&token2=A62E4D2E4A4CBFB87710BA7BA567CA2F8FEDF55882D1442882876878C51EF4D8EFBC507F822B2719&ggt_select(79)=0&ggt_select(33)=1&ggt_select(82)=10&ggt_radio(62)=0&ggt_radio(65)=0&ggt_radio(68)=0&ggt_checkbox(71)=1&ggt_hidden(52)=1
+        function dismissNotAvailable() {
+            notAvailable.style.display = 'none';
+            const activeItem = document.querySelector('.menu-item.active');
+            if (activeItem) {
+                viewer.setAttribute('url', activeItem.getAttribute('data-url'));
+            }
+        }
 
-Click Here to try to load the live page in a new tab (or to download the URL as a file).
+        function checkForNotFound() {
+            try {
+                const shadow = viewer.shadowRoot;
+                if (!shadow) return;
+                const iframe = shadow.querySelector('iframe');
+                if (!iframe || !iframe.contentDocument) return;
+                const body = iframe.contentDocument.body;
+                if (body && body.innerText.includes('Archived Page Not Found')) {
+                    notAvailable.style.display = 'block';
+                }
+            } catch(e) {}
+        }
+
+        setInterval(checkForNotFound, 500);
+
+        menuItems.forEach(item => {
+            item.addEventListener('click', () => {
+                menuItems.forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                const waczUrl = item.getAttribute('data-src');
+                const startUrl = item.getAttribute('data-url');
+                placeholder.style.display = 'none';
+                notAvailable.style.display = 'none';
+                viewer.style.display = 'block';
+                viewer.setAttribute('source', waczUrl);
+                viewer.setAttribute('url', startUrl);
+            });
+        });
+
+        viewer.addEventListener('warc-copy-failed', (e) => {
+            e.preventDefault();
+            notAvailable.style.display = 'block';
+        });
+
+        viewer.addEventListener('render-failed', (e) => {
+            e.preventDefault();
+            notAvailable.style.display = 'block';
+        });
+
+        viewer.addEventListener('urlchange', (e) => {
+            console.log('urlchange fired:', JSON.stringify(e.detail));
+            if (e.detail && e.detail.url && e.detail.url.includes('__wb_method=POST')) {
+                notAvailable.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
