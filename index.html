@@ -74,46 +74,9 @@
         let lastGoodUrl = '';
         let isReverting = false;
 
-        // Native Iframe Interceptor Engine
-        // This intercepts frames created by third-party frameworks natively
-        (function() {
-            const originalAppend = Element.prototype.appendChild;
-            Element.prototype.appendChild = function(child) {
-                if (child && child.tagName === 'IFRAME') {
-                    setInterval(() => {
-                        if (isReverting) return;
-                        try {
-                            const win = child.contentWindow;
-                            const doc = child.contentDocument || (win ? win.document : null);
-                            if (doc && doc.body) {
-                                const bodyText = doc.body.innerText || '';
-                                if (bodyText.includes('Archived Page Not Found') || 
-                                    bodyText.includes('not found in this archive') ||
-                                    (win && win.location.href.includes('__wb_method=POST'))) {
-                                    console.warn("Internal error vector intercepted cleanly.");
-                                    revertToSafeState();
-                                }
-                            }
-                        } catch (err) {
-                            // Recover safely if frame isolation boundaries are crossed
-                            revertToSafeState();
-                        }
-                    }, 150);
-                }
-                return originalAppend.apply(this, arguments);
-            };
-        })();
-
-        function dismissNotAvailable() {
-            notAvailable.style.display = 'none';
-            revertToSafeState();
-        }
-
         function revertToSafeState() {
             if (isReverting) return;
             isReverting = true;
-            
-            console.warn("Resetting simulator component instance...");
             
             const activeItem = document.querySelector('.menu-item.active');
             if (!activeItem) { isReverting = false; return; }
@@ -121,10 +84,12 @@
             const waczUrl = activeItem.getAttribute('data-src');
             const targetUrl = lastGoodUrl || activeItem.getAttribute('data-url');
 
-            // Force destroy the locked layout wrapper element
+            console.warn("Intercepted unmapped navigation state. Restoring baseline environment...");
+            
+            // Cleanly clear the frozen node component instance
             viewer.remove();
 
-            // Instantiate a clean sandbox view instance
+            // Spawn a pristine view instance to flush out the service worker error pipeline
             const newViewer = document.createElement('replay-web-page');
             newViewer.id = 'sim-viewer';
             newViewer.setAttribute('embed', 'replayonly');
@@ -140,13 +105,19 @@
         }
 
         function attachViewerListeners(element) {
+            // Listen to framework state mutations natively provided by the engine component
             element.addEventListener('urlchange', (e) => {
                 if (isReverting) return;
+                
                 if (e.detail && e.detail.url) {
-                    if (e.detail.url.includes('__wb_method=POST')) {
+                    const currentUrl = e.detail.url;
+                    
+                    // Intercept whenever an unmapped action attempts an archive breakout method
+                    if (currentUrl.includes('__wb_method=POST') || currentUrl.includes('nw_quick.html')) {
                         setTimeout(revertToSafeState, 0);
                     } else {
-                        lastGoodUrl = e.detail.url;
+                        // Securely cache our known working route snapshot baseline
+                        lastGoodUrl = currentUrl;
                     }
                 }
             });
@@ -156,6 +127,7 @@
             element.addEventListener('error', (e) => { e.preventDefault(); revertToSafeState(); });
         }
 
+        // Initialize top-level node listeners
         attachViewerListeners(viewer);
 
         menuItems.forEach(item => {
