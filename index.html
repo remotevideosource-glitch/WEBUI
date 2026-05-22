@@ -74,13 +74,35 @@
         let lastGoodUrl = '';
         let isReverting = false;
 
-        // Catch the explicit internal 404 alert thrown from ui.js
-        window.addEventListener("sim-404-detected", () => {
-            if (!isReverting) {
-                console.warn("Internal 404 trap triggered from ui.js context.");
-                revertToSafeState();
-            }
-        });
+        // Native Iframe Interceptor Engine
+        // This intercepts frames created by third-party frameworks natively
+        (function() {
+            const originalAppend = Element.prototype.appendChild;
+            Element.prototype.appendChild = function(child) {
+                if (child && child.tagName === 'IFRAME') {
+                    setInterval(() => {
+                        if (isReverting) return;
+                        try {
+                            const win = child.contentWindow;
+                            const doc = child.contentDocument || (win ? win.document : null);
+                            if (doc && doc.body) {
+                                const bodyText = doc.body.innerText || '';
+                                if (bodyText.includes('Archived Page Not Found') || 
+                                    bodyText.includes('not found in this archive') ||
+                                    (win && win.location.href.includes('__wb_method=POST'))) {
+                                    console.warn("Internal error vector intercepted cleanly.");
+                                    revertToSafeState();
+                                }
+                            }
+                        } catch (err) {
+                            // Recover safely if frame isolation boundaries are crossed
+                            revertToSafeState();
+                        }
+                    }, 150);
+                }
+                return originalAppend.apply(this, arguments);
+            };
+        })();
 
         function dismissNotAvailable() {
             notAvailable.style.display = 'none';
@@ -91,7 +113,7 @@
             if (isReverting) return;
             isReverting = true;
             
-            console.warn("Resetting simulator back to last known active route:", lastGoodUrl);
+            console.warn("Resetting simulator component instance...");
             
             const activeItem = document.querySelector('.menu-item.active');
             if (!activeItem) { isReverting = false; return; }
@@ -99,10 +121,10 @@
             const waczUrl = activeItem.getAttribute('data-src');
             const targetUrl = lastGoodUrl || activeItem.getAttribute('data-url');
 
-            // Wipe out the component instance to instantly clear its internal SW memory states
+            // Force destroy the locked layout wrapper element
             viewer.remove();
 
-            // Rebuild fresh element template
+            // Instantiate a clean sandbox view instance
             const newViewer = document.createElement('replay-web-page');
             newViewer.id = 'sim-viewer';
             newViewer.setAttribute('embed', 'replayonly');
