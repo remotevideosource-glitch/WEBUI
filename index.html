@@ -70,48 +70,18 @@
         const placeholder = document.getElementById('placeholder');
         const notAvailable = document.getElementById('not-available');
 
-        // --- CUSTOM STYLING FOR UNMAPPED BUTTONS ---
-        // Add the selectors (ID, Class, or Attributes) for your broken elements here.
-        // For example, if 'btn-fax' and 'btn-scan' are unmapped on the Sharp UI:
-        const unmappedSelectors = `
-            #btn-fax, 
-            #btn-scan,
-            .unmapped-class-example
-        `;
-
-        function disableUnmappedButtons() {
-            try {
-                const shadow = viewer.shadowRoot;
-                if (!shadow) return;
-                const iframe = shadow.querySelector('iframe');
-                if (!iframe || !iframe.contentDocument) return;
-                
-                const innerDoc = iframe.contentDocument;
-                
-                // Only inject if our custom style tag doesn't already exist in the iframe
-                if (!innerDoc.getElementById('custom-disable-styles')) {
-                    const styleTag = innerDoc.createElement('style');
-                    styleTag.id = 'custom-disable-styles';
-                    styleTag.textContent = `
-                        ${unmappedSelectors} {
-                            pointer-events: none !important;
-                            cursor: not-allowed !important;
-                            opacity: 0.65 !important;
-                        }
-                    `;
-                    innerDoc.head.appendChild(styleTag);
-                    console.log("Injected safety styles into simulator UI.");
-                }
-            } catch(e) {
-                // Fails silently if cross-origin rules block it temporarily during load
-            }
-        }
+        // Track the last successfully loaded URL so we can revert to it if a click fails
+        let lastGoodUrl = '';
 
         function dismissNotAvailable() {
             notAvailable.style.display = 'none';
-            const activeItem = document.querySelector('.menu-item.active');
-            if (activeItem) {
-                viewer.setAttribute('url', activeItem.getAttribute('data-url'));
+            if (lastGoodUrl) {
+                viewer.setAttribute('url', lastGoodUrl);
+            } else {
+                const activeItem = document.querySelector('.menu-item.active');
+                if (activeItem) {
+                    viewer.setAttribute('url', activeItem.getAttribute('data-url'));
+                }
             }
         }
 
@@ -121,18 +91,21 @@
                 if (!shadow) return;
                 const iframe = shadow.querySelector('iframe');
                 if (!iframe || !iframe.contentDocument) return;
+                
                 const body = iframe.contentDocument.body;
                 if (body && body.innerText.includes('Archived Page Not Found')) {
-                    notAvailable.style.display = 'block';
+                    // SILENT BLOCK: Instead of showing the modal, auto-revert to the last safe working screen
+                    console.log("Unmapped link clicked! Reverting to last known good page.");
+                    
+                    if (lastGoodUrl) {
+                        viewer.setAttribute('url', lastGoodUrl);
+                    }
                 }
             } catch(e) {}
         }
 
-        // Keep your existing error check loop, and mix in our button disabler
-        setInterval(() => {
-            checkForNotFound();
-            disableUnmappedButtons();
-        }, 500);
+        // Check for missing pages rapidly (every 100ms instead of 500ms) for a seamless look
+        setInterval(checkForNotFound, 100);
 
         menuItems.forEach(item => {
             item.addEventListener('click', () => {
@@ -140,6 +113,9 @@
                 item.classList.add('active');
                 const waczUrl = item.getAttribute('data-src');
                 const startUrl = item.getAttribute('data-url');
+                
+                lastGoodUrl = startUrl; // Base initialization
+                
                 placeholder.style.display = 'none';
                 notAvailable.style.display = 'none';
                 viewer.style.display = 'block';
@@ -150,6 +126,7 @@
 
         viewer.addEventListener('warc-copy-failed', (e) => {
             e.preventDefault();
+            // Optional: comment this out if you never want the error screen to appear
             notAvailable.style.display = 'block';
         });
 
@@ -160,8 +137,17 @@
 
         viewer.addEventListener('urlchange', (e) => {
             console.log('urlchange fired:', JSON.stringify(e.detail));
-            if (e.detail && e.detail.url && e.detail.url.includes('__wb_method=POST')) {
-                notAvailable.style.display = 'block';
+            
+            if (e.detail && e.detail.url) {
+                // If the engine hits a POST action that wasn't mapped
+                if (e.detail.url.includes('__wb_method=POST')) {
+                    if (lastGoodUrl) {
+                        viewer.setAttribute('url', lastGoodUrl);
+                    }
+                } else {
+                    // Cache the current URL as our "safe haven" if it's not a known error route
+                    lastGoodUrl = e.detail.url;
+                }
             }
         });
     </script>
