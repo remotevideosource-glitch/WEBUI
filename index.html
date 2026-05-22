@@ -70,6 +70,43 @@
         const placeholder = document.getElementById('placeholder');
         const notAvailable = document.getElementById('not-available');
 
+        // --- CUSTOM STYLING FOR UNMAPPED BUTTONS ---
+        // Add the selectors (ID, Class, or Attributes) for your broken elements here.
+        // For example, if 'btn-fax' and 'btn-scan' are unmapped on the Sharp UI:
+        const unmappedSelectors = `
+            #btn-fax, 
+            #btn-scan,
+            .unmapped-class-example
+        `;
+
+        function disableUnmappedButtons() {
+            try {
+                const shadow = viewer.shadowRoot;
+                if (!shadow) return;
+                const iframe = shadow.querySelector('iframe');
+                if (!iframe || !iframe.contentDocument) return;
+                
+                const innerDoc = iframe.contentDocument;
+                
+                // Only inject if our custom style tag doesn't already exist in the iframe
+                if (!innerDoc.getElementById('custom-disable-styles')) {
+                    const styleTag = innerDoc.createElement('style');
+                    styleTag.id = 'custom-disable-styles';
+                    styleTag.textContent = `
+                        ${unmappedSelectors} {
+                            pointer-events: none !important;
+                            cursor: not-allowed !important;
+                            opacity: 0.65 !important;
+                        }
+                    `;
+                    innerDoc.head.appendChild(styleTag);
+                    console.log("Injected safety styles into simulator UI.");
+                }
+            } catch(e) {
+                // Fails silently if cross-origin rules block it temporarily during load
+            }
+        }
+
         function dismissNotAvailable() {
             notAvailable.style.display = 'none';
             const activeItem = document.querySelector('.menu-item.active');
@@ -91,7 +128,11 @@
             } catch(e) {}
         }
 
-        setInterval(checkForNotFound, 500);
+        // Keep your existing error check loop, and mix in our button disabler
+        setInterval(() => {
+            checkForNotFound();
+            disableUnmappedButtons();
+        }, 500);
 
         menuItems.forEach(item => {
             item.addEventListener('click', () => {
