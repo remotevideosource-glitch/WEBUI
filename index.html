@@ -73,84 +73,12 @@
         let viewer = document.getElementById('sim-viewer');
         let lastGoodUrl = '';
         let isReverting = false;
-        let internalDocumentObserver = null;
 
-        // Directly watch the Web Component's Shadow DOM to track internal page updates
-        function setupShadowTreeTracking(targetViewer) {
-            if (!targetViewer) return;
-
-            // Disconnect old frame tracking loops to prevent memory leaks
-            if (internalDocumentObserver) {
-                internalDocumentObserver.disconnect();
-                internalDocumentObserver = null;
-            }
-
-            const shadowRootObserver = new MutationObserver(() => {
-                const shadow = targetViewer.shadowRoot;
-                if (!shadow) return;
-
-                const iframe = shadow.querySelector('iframe');
-                if (iframe && !internalDocumentObserver) {
-                    console.log("Tracking hook securely bound to the active engine iframe.");
-                    
-                    const monitorIframeContent = () => {
-                        if (isReverting) return;
-                        try {
-                            const frameDoc = iframe.contentDocument || iframe.contentWindow.document;
-                            if (frameDoc && frameDoc.body) {
-                                const bodyText = frameDoc.body.innerText || '';
-                                if (bodyText.includes('Archived Page Not Found') || 
-                                    bodyText.includes('not found in this archive') || 
-                                    bodyText.includes('Sorry, this page was not found')) {
-                                    console.warn("Caught unmapped application state inside frame content.");
-                                    revertToSafeState();
-                                }
-                            }
-                        } catch (e) {
-                            // Revert on cross-origin security exceptions
-                            revertToSafeState();
-                        }
-                    };
-
-                    // Attach a MutationObserver directly inside the frame context to monitor async service worker updates
-                    try {
-                        const frameDoc = iframe.contentDocument || iframe.contentWindow.document;
-                        if (frameDoc) {
-                            internalDocumentObserver = new MutationObserver(monitorIframeContent);
-                            internalDocumentObserver.observe(frameDoc.documentElement, {
-                                childList: true,
-                                subtree: true
-                            });
-                            // Execute an initial baseline sweep
-                            monitorIframeContent();
-                        }
-                    } catch (err) {
-                        revertToSafeState();
-                    }
-                }
-            });
-
-            // Monitor shadow root attachment changes
-            shadowRootObserver.observe(targetViewer, { childList: true, attributes: true });
-            
-            // Force a quick cycle evaluation for pre-rendered frames
-            if (targetViewer.shadowRoot) {
-                const existingIframe = targetViewer.shadowRoot.querySelector('iframe');
-                if (existingIframe) {
-                    try {
-                        const frameDoc = existingIframe.contentDocument || existingIframe.contentWindow.document;
-                        if (frameDoc) {
-                            internalDocumentObserver = new MutationObserver(() => {
-                                if (isReverting) return;
-                                const txt = frameDoc.body ? frameDoc.body.innerText : '';
-                                if (txt.includes('Archived Page Not Found')) revertToSafeState();
-                            });
-                            internalDocumentObserver.observe(frameDoc.documentElement, { childList: true, subtree: true });
-                        }
-                    } catch(e) {}
-                }
-            }
-        }
+        // Catch the explicit alarm from our modified ui.js file
+        window.addEventListener("sim-404-detected", () => {
+            console.warn("Global safety signal caught!");
+            revertToSafeState();
+        });
 
         function dismissNotAvailable() {
             notAvailable.style.display = 'none';
@@ -169,15 +97,10 @@
             const waczUrl = activeItem.getAttribute('data-src');
             const targetUrl = lastGoodUrl || activeItem.getAttribute('data-url');
 
-            if (internalDocumentObserver) {
-                internalDocumentObserver.disconnect();
-                internalDocumentObserver = null;
-            }
-
-            // Cleanly remove the locked component instance
+            // Force-destroy the locked custom element 
             viewer.remove();
 
-            // Spawn a fresh component instance to flush the service worker error pipeline
+            // Rebuild a clean, pristine instance to flush the service worker pipeline
             const newViewer = document.createElement('replay-web-page');
             newViewer.id = 'sim-viewer';
             newViewer.setAttribute('embed', 'replayonly');
@@ -186,39 +109,11 @@
             newViewer.setAttribute('url', targetUrl);
 
             attachViewerListeners(newViewer);
-            setupShadowTreeTracking(newViewer);
-            
             container.insertBefore(newViewer, notAvailable);
             viewer = newViewer;
 
             setTimeout(() => { isReverting = false; }, 400);
         }
-
-        function fallbackPollingCheck() {
-            if (isReverting || !viewer || !viewer.shadowRoot) return;
-            const iframe = viewer.shadowRoot.querySelector('iframe');
-            if (!iframe) return;
-
-            try {
-                const frameDoc = iframe.contentDocument || iframe.contentWindow.document;
-                if (frameDoc && frameDoc.body) {
-                    const text = frameDoc.body.innerText || '';
-                    if (text.includes('Archived Page Not Found')) {
-                        revertToSafeState();
-                        return;
-                    }
-                }
-                const currentUrl = iframe.contentWindow.location.href || '';
-                if (currentUrl.includes('__wb_method=POST')) {
-                    revertToSafeState();
-                }
-            } catch (e) {
-                revertToSafeState();
-            }
-        }
-
-        // Secondary backup loop running every 150ms
-        setInterval(fallbackPollingCheck, 150);
 
         function attachViewerListeners(element) {
             element.addEventListener('urlchange', (e) => {
@@ -227,6 +122,7 @@
                     if (e.detail.url.includes('__wb_method=POST')) {
                         setTimeout(revertToSafeState, 0);
                     } else {
+                        // Keep track of the last working setup page 
                         lastGoodUrl = e.detail.url;
                     }
                 }
@@ -237,9 +133,8 @@
             element.addEventListener('error', (e) => { e.preventDefault(); revertToSafeState(); });
         }
 
-        // Initialize the event layers
+        // Initialize component listeners
         attachViewerListeners(viewer);
-        setupShadowTreeTracking(viewer);
 
         menuItems.forEach(item => {
             item.addEventListener('click', () => {
