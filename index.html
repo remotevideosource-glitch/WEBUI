@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+  <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -74,6 +74,45 @@
         let lastGoodUrl = '';
         let isReverting = false;
 
+        // Clean deep-scanning engine that searches inside the component shadow layer directly
+        setInterval(() => {
+            if (isReverting || !viewer) return;
+
+            try {
+                // Safeguard check to read the element's shadowRoot safely
+                const shadow = viewer.shadowRoot;
+                if (!shadow) return;
+
+                const iframe = shadow.querySelector('iframe');
+                if (!iframe) return;
+
+                const frameWin = iframe.contentWindow;
+                const frameDoc = iframe.contentDocument || (frameWin ? frameWin.document : null);
+
+                if (frameDoc && frameDoc.body) {
+                    const bodyText = frameDoc.body.innerText || '';
+                    const currentUrl = frameWin.location.href || '';
+
+                    // Intercept any unmapped state signatures
+                    if (bodyText.includes('Archived Page Not Found') || 
+                        bodyText.includes('not found in this archive') || 
+                        currentUrl.includes('__wb_method=POST')) {
+                        
+                        console.warn("Direct scanner caught internal 404/POST state breakout.");
+                        revertToSafeState();
+                    }
+                }
+            } catch (err) {
+                // If a cross-origin tracking error hits, auto-revert out of the broken route
+                revertToSafeState();
+            }
+        }, 150);
+
+        function dismissNotAvailable() {
+            notAvailable.style.display = 'none';
+            revertToSafeState();
+        }
+
         function revertToSafeState() {
             if (isReverting) return;
             isReverting = true;
@@ -84,12 +123,12 @@
             const waczUrl = activeItem.getAttribute('data-src');
             const targetUrl = lastGoodUrl || activeItem.getAttribute('data-url');
 
-            console.warn("Intercepted unmapped navigation state. Restoring baseline environment...");
+            console.warn("Rebuilding clean simulator interface layout target:", targetUrl);
             
-            // Cleanly clear the frozen node component instance
+            // Flush the current element out of the active rendering context
             viewer.remove();
 
-            // Spawn a pristine view instance to flush out the service worker error pipeline
+            // Spawn a fresh node instance
             const newViewer = document.createElement('replay-web-page');
             newViewer.id = 'sim-viewer';
             newViewer.setAttribute('embed', 'replayonly');
@@ -105,19 +144,15 @@
         }
 
         function attachViewerListeners(element) {
-            // Listen to framework state mutations natively provided by the engine component
             element.addEventListener('urlchange', (e) => {
                 if (isReverting) return;
-                
                 if (e.detail && e.detail.url) {
-                    const currentUrl = e.detail.url;
-                    
-                    // Intercept whenever an unmapped action attempts an archive breakout method
-                    if (currentUrl.includes('__wb_method=POST') || currentUrl.includes('nw_quick.html')) {
+                    const targetUrl = e.detail.url;
+                    if (targetUrl.includes('__wb_method=POST')) {
                         setTimeout(revertToSafeState, 0);
                     } else {
-                        // Securely cache our known working route snapshot baseline
-                        lastGoodUrl = currentUrl;
+                        // Keep track of our verified location baseline
+                        lastGoodUrl = targetUrl;
                     }
                 }
             });
@@ -127,7 +162,6 @@
             element.addEventListener('error', (e) => { e.preventDefault(); revertToSafeState(); });
         }
 
-        // Initialize top-level node listeners
         attachViewerListeners(viewer);
 
         menuItems.forEach(item => {
@@ -150,4 +184,4 @@
         });
     </script>
 </body>
-</html>
+</html>     
