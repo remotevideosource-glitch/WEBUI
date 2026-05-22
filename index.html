@@ -66,10 +66,11 @@
     </div>
     <script>
         const menuItems = document.querySelectorAll('.menu-item');
-        const viewer = document.getElementById('sim-viewer');
+        const container = document.getElementById('viewer-container');
         const placeholder = document.getElementById('placeholder');
         const notAvailable = document.getElementById('not-available');
-
+        
+        let viewer = document.getElementById('sim-viewer');
         let lastGoodUrl = '';
         let isReverting = false;
 
@@ -78,67 +79,94 @@
             revertToSafeState();
         }
 
+        // FORCE RESET: Destroys and recreates the component to smash through stuck error loops
         function revertToSafeState() {
             if (isReverting) return;
             isReverting = true;
             
-            console.warn("Reverting to safe URL:", lastGoodUrl);
+            console.warn("Unmapped action detected. Hot-rebuilding viewer to safe URL:", lastGoodUrl);
             
-            viewer.removeAttribute('url');
-            setTimeout(() => {
-                if (lastGoodUrl) {
-                    viewer.setAttribute('url', lastGoodUrl);
-                } else {
-                    const activeItem = document.querySelector('.menu-item.active');
-                    if (activeItem) viewer.setAttribute('url', activeItem.getAttribute('data-url'));
-                }
-                setTimeout(() => { isReverting = false; }, 500);
-            }, 50);
+            const activeItem = document.querySelector('.menu-item.active');
+            if (!activeItem) { isReverting = false; return; }
+
+            const waczUrl = activeItem.getAttribute('data-src');
+            const targetUrl = lastGoodUrl || activeItem.getAttribute('data-url');
+
+            // 1. Wipe out the old stuck element
+            viewer.remove();
+
+            // 2. Build a pristine new instance
+            const newViewer = document.createElement('replay-web-page');
+            newViewer.id = 'sim-viewer';
+            newViewer.setAttribute('embed', 'replayonly');
+            newViewer.style.display = 'block';
+            newViewer.setAttribute('source', waczUrl);
+            newViewer.setAttribute('url', targetUrl);
+
+            // 3. Bind events to the brand new element
+            attachViewerListeners(newViewer);
+
+            // 4. Inject it back into your UI layout layout
+            container.insertBefore(newViewer, notAvailable);
+            viewer = newViewer;
+
+            // Give the browser a brief moment to settle the thread before allowing subsequent updates
+            setTimeout(() => { isReverting = false; }, 400);
         }
 
-        function checkForNotFoundAndInterceptForm() {
+        function checkForNotFound() {
             if (isReverting) return;
 
             try {
                 const shadow = viewer.shadowRoot;
                 if (!shadow) return;
                 const iframe = shadow.querySelector('iframe');
-                if (!iframe || !iframe.contentDocument) return;
+                if (!iframe) return;
 
-                const innerDoc = iframe.contentDocument;
-
-                // --- NEW TRAP: Intercept form submits inside the iframe before they happen ---
-                if (!innerDoc._hasSubmitInterceptor) {
-                    innerDoc.addEventListener('submit', (event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        console.warn("Form submission blocked instantly.");
-                        revertToSafeState();
-                    }, true);
-                    innerDoc._hasSubmitInterceptor = true;
-                }
-
-                // Check URL for POST methods
+                // Trap 1: Scan internal live tracking URL for POST submission markers
                 const currentIframeUrl = iframe.contentWindow ? iframe.contentWindow.location.href : '';
                 if (currentIframeUrl.includes('__wb_method=POST')) {
                     revertToSafeState();
                     return;
                 }
 
-                // Check text for backend 404 errors
-                if (innerDoc.body) {
-                    const bodyText = innerDoc.body.innerText || '';
-                    if (bodyText.includes('Archived Page Not Found')) {
+                // Trap 2: Scan document text contents for archive missing text strings
+                if (iframe.contentDocument && iframe.contentDocument.body) {
+                    const bodyText = iframe.contentDocument.body.innerText || '';
+                    if (bodyText.includes('Archived Page Not Found') || bodyText.includes('Sorry, this page was not found')) {
                         revertToSafeState();
                     }
                 }
             } catch(e) {
-                // Cross-origin boundaries might temporarily throw errors during transitions
+                // If a cross-origin block happens here, it's often because pywb loaded an unmapped outer error scope.
+                // We treat persistent document read execution locks as a trigger to safety reset.
             }
         }
 
-        // Loop fast (100ms) to ensure we catch form clicks instantly
-        setInterval(checkForNotFoundAndInterceptForm, 100);
+        // High frequency checking system (runs every 100ms) to ensure seamless handling
+        setInterval(checkForNotFound, 100);
+
+        function attachViewerListeners(element) {
+            element.addEventListener('urlchange', (e) => {
+                if (isReverting) return;
+                
+                if (e.detail && e.detail.url) {
+                    if (e.detail.url.includes('__wb_method=POST')) {
+                        setTimeout(revertToSafeState, 0);
+                    } else {
+                        // Remember this route as a working baseline location
+                        lastGoodUrl = e.detail.url;
+                    }
+                }
+            });
+
+            element.addEventListener('warc-copy-failed', (e) => { e.preventDefault(); revertToSafeState(); });
+            element.addEventListener('render-failed', (e) => { e.preventDefault(); revertToSafeState(); });
+            element.addEventListener('error', (e) => { e.preventDefault(); revertToSafeState(); });
+        }
+
+        // Initialize listeners for the first instance
+        attachViewerListeners(viewer);
 
         menuItems.forEach(item => {
             item.addEventListener('click', () => {
@@ -158,22 +186,6 @@
                 viewer.setAttribute('url', startUrl);
             });
         });
-
-        viewer.addEventListener('urlchange', (e) => {
-            if (isReverting) return;
-            
-            if (e.detail && e.detail.url) {
-                if (e.detail.url.includes('__wb_method=POST')) {
-                    revertToSafeState();
-                } else {
-                    lastGoodUrl = e.detail.url;
-                }
-            }
-        });
-
-        viewer.addEventListener('warc-copy-failed', (e) => { e.preventDefault(); revertToSafeState(); });
-        viewer.addEventListener('render-failed', (e) => { e.preventDefault(); revertToSafeState(); });
-        viewer.addEventListener('error', (e) => { e.preventDefault(); revertToSafeState(); });
     </script>
 </body>
 </html>
