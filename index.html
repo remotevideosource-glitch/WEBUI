@@ -78,6 +78,21 @@
             }
         }
 
+        function checkForNotFound() {
+            try {
+                const shadow = viewer.shadowRoot;
+                if (!shadow) return;
+                const iframe = shadow.querySelector('iframe');
+                if (!iframe || !iframe.contentDocument) return;
+                const body = iframe.contentDocument.body;
+                if (body && body.innerText.includes('Archived Page Not Found')) {
+                    notAvailable.style.display = 'block';
+                }
+            } catch(e) {}
+        }
+
+        setInterval(checkForNotFound, 500);
+
         menuItems.forEach(item => {
             item.addEventListener('click', () => {
                 menuItems.forEach(i => i.classList.remove('active'));
@@ -104,12 +119,6 @@
 
         viewer.addEventListener('urlchange', (e) => {
             if (e.detail && e.detail.url && e.detail.url.includes('__wb_method=POST')) {
-                notAvailable.style.display = 'block';
-            }
-        });
-
-        viewer.addEventListener('rwp-status', (e) => {
-            if (e.detail && e.detail.status === 'not-found') {
                 notAvailable.style.display = 'block';
             }
         });
