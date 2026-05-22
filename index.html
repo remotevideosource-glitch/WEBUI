@@ -79,12 +79,11 @@
             revertToSafeState();
         }
 
-        // FORCE RESET: Destroys and recreates the component to smash through stuck error loops
         function revertToSafeState() {
             if (isReverting) return;
             isReverting = true;
             
-            console.warn("Unmapped action detected. Hot-rebuilding viewer to safe URL:", lastGoodUrl);
+            console.warn("Unmapped route hit! Hot-rebuilding simulator to last safe page:", lastGoodUrl);
             
             const activeItem = document.querySelector('.menu-item.active');
             if (!activeItem) { isReverting = false; return; }
@@ -92,10 +91,10 @@
             const waczUrl = activeItem.getAttribute('data-src');
             const targetUrl = lastGoodUrl || activeItem.getAttribute('data-url');
 
-            // 1. Wipe out the old stuck element
+            // Force-destroy the locked custom component element
             viewer.remove();
 
-            // 2. Build a pristine new instance
+            // Rebuild a clean, pristine instance to flush the error state
             const newViewer = document.createElement('replay-web-page');
             newViewer.id = 'sim-viewer';
             newViewer.setAttribute('embed', 'replayonly');
@@ -103,47 +102,60 @@
             newViewer.setAttribute('source', waczUrl);
             newViewer.setAttribute('url', targetUrl);
 
-            // 3. Bind events to the brand new element
             attachViewerListeners(newViewer);
-
-            // 4. Inject it back into your UI layout layout
             container.insertBefore(newViewer, notAvailable);
             viewer = newViewer;
 
-            // Give the browser a brief moment to settle the thread before allowing subsequent updates
             setTimeout(() => { isReverting = false; }, 400);
         }
 
         function checkForNotFound() {
             if (isReverting) return;
 
+            const shadow = viewer.shadowRoot;
+            if (!shadow) return;
+            const iframe = shadow.querySelector('iframe');
+            if (!iframe) return;
+
+            // --- CHECK 1: Test Frame Body Content (Isolated) ---
+            let bodyText = '';
             try {
-                const shadow = viewer.shadowRoot;
-                if (!shadow) return;
-                const iframe = shadow.querySelector('iframe');
-                if (!iframe) return;
-
-                // Trap 1: Scan internal live tracking URL for POST submission markers
-                const currentIframeUrl = iframe.contentWindow ? iframe.contentWindow.location.href : '';
-                if (currentIframeUrl.includes('__wb_method=POST')) {
-                    revertToSafeState();
-                    return;
-                }
-
-                // Trap 2: Scan document text contents for archive missing text strings
                 if (iframe.contentDocument && iframe.contentDocument.body) {
-                    const bodyText = iframe.contentDocument.body.innerText || '';
-                    if (bodyText.includes('Archived Page Not Found') || bodyText.includes('Sorry, this page was not found')) {
-                        revertToSafeState();
-                    }
+                    bodyText = iframe.contentDocument.body.innerText || '';
                 }
-            } catch(e) {
-                // If a cross-origin block happens here, it's often because pywb loaded an unmapped outer error scope.
-                // We treat persistent document read execution locks as a trigger to safety reset.
+            } catch (e) {
+                // If the browser blocks us from reading the text via CORS, it means 
+                // the viewer broke out into an unmapped error page domain.
+                revertToSafeState();
+                return;
+            }
+
+            if (bodyText.includes('Archived Page Not Found') || 
+                bodyText.includes('not found in this archive') || 
+                bodyText.includes('Sorry, this page was not found')) {
+                revertToSafeState();
+                return;
+            }
+
+            // --- CHECK 2: Test Frame Live Navigation URL (Isolated) ---
+            let currentIframeUrl = '';
+            try {
+                if (iframe.contentWindow) {
+                    currentIframeUrl = iframe.contentWindow.location.href || '';
+                }
+            } catch (e) {
+                // Treat URL security block as an unmapped navigation breakout
+                revertToSafeState();
+                return;
+            }
+
+            if (currentIframeUrl.includes('__wb_method=POST')) {
+                revertToSafeState();
+                return;
             }
         }
 
-        // High frequency checking system (runs every 100ms) to ensure seamless handling
+        // Keep a tight loop (100ms) to intercept and wipe the screen before it renders visually
         setInterval(checkForNotFound, 100);
 
         function attachViewerListeners(element) {
@@ -154,7 +166,7 @@
                     if (e.detail.url.includes('__wb_method=POST')) {
                         setTimeout(revertToSafeState, 0);
                     } else {
-                        // Remember this route as a working baseline location
+                        // Store this as our baseline fallback location
                         lastGoodUrl = e.detail.url;
                     }
                 }
@@ -165,7 +177,7 @@
             element.addEventListener('error', (e) => { e.preventDefault(); revertToSafeState(); });
         }
 
-        // Initialize listeners for the first instance
+        // Initialize the tracking engine
         attachViewerListeners(viewer);
 
         menuItems.forEach(item => {
