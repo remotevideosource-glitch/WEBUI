@@ -54,10 +54,12 @@
     </div>
     <div id="viewer-container">
         <div id="placeholder"><h3>Select a machine UI to begin.</h3></div>
-        <replay-web-page
-            id="sim-viewer"
-            embed="replayonly">
-        </replay-web-page>
+       <replay-web-page 
+  id="sim-viewer" 
+  embed="replayonly" 
+  liveRedirectOnNotFound="false"> 
+</replay-web-page>
+
         <div id="not-available">
             <h2>Page Not Available</h2>
             <p>This page was not captured in the simulator archive.</p>
