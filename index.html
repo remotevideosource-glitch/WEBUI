@@ -63,17 +63,20 @@ const bodyText = frameDoc.body.innerText || '';
 const htmlContent = frameDoc.body.innerHTML || ''; 
 const currentUrl = frameWin.location.href || ''; 
 
-// STRIP CRASH BEHAVIOR FOR UPDATE BUTTON REQUESTS
-// If the current URL contains the broken update action, bypass revert completely
-if (currentUrl.includes('action=updatebtn')) {
+// Target unmapped Update buttons throwing the error screen
+if (currentUrl.includes('action=updatebtn') && (bodyText.includes('Archived Page Not Found') || bodyText.includes('not found in this archive'))) {
+    console.warn("Muting Update button error screen. Bouncing history back.");
+    frameWin.history.back(); 
     return; 
 }
 
-// Intercept any unmapped service worker injections or raw POST breakouts 
-if (bodyText.includes('Archived Page Not Found') || bodyText.includes('not found in this archive') || htmlContent.includes('__wb_method=POST') || currentUrl.includes('__wb_method=POST')) { 
-console.warn("State engine caught unmapped routing error inside container scope."); 
-revertToSafeState(); 
-} 
+// Intercept general unmapped routing errors (ignoring our bypassed update button)
+if (!currentUrl.includes('action=updatebtn')) {
+    if (bodyText.includes('Archived Page Not Found') || bodyText.includes('not found in this archive') || htmlContent.includes('__wb_method=POST') || currentUrl.includes('__wb_method=POST')) { 
+        console.warn("State engine caught unmapped routing error inside container scope."); 
+        revertToSafeState(); 
+    } 
+}
 } 
 } catch (err) { 
 // Auto-revert safely if browser sandbox barriers (cross-origin exceptions) are triggered 
@@ -106,6 +109,7 @@ newViewer.setAttribute('embed', 'replayonly');
 newViewer.style.display = 'block'; 
 newViewer.setAttribute('source', waczUrl); 
 newViewer.setAttribute('url', targetUrl); 
+newViewer.setAttribute('liveRedirectOnNotFound', 'false');
 attachViewerListeners(newViewer); 
 container.insertBefore(newViewer, notAvailable); 
 viewer = newViewer; 
@@ -120,7 +124,7 @@ if (isReverting) return;
 if (e.detail && e.detail.url) { 
 const targetUrl = e.detail.url; 
 
-// Also bypass reconstruction inside event listeners if update button is targeted
+// Bypass reconstruction event triggers if update button parameter is passed
 if (targetUrl.includes('action=updatebtn')) {
     return;
 }
