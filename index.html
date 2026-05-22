@@ -73,53 +73,84 @@
         let viewer = document.getElementById('sim-viewer');
         let lastGoodUrl = '';
         let isReverting = false;
+        let internalDocumentObserver = null;
 
-        // Runtime hook injection into the Replay Web Page component internals
-        customElements.whenDefined('replay-web-page').then(() => {
-            const ReplayWebPageClass = customElements.get('replay-web-page');
-            const originalOnLoad = ReplayWebPageClass.prototype.onLoad;
+        // Directly watch the Web Component's Shadow DOM to track internal page updates
+        function setupShadowTreeTracking(targetViewer) {
+            if (!targetViewer) return;
 
-            ReplayWebPageClass.prototype.onLoad = function(event) {
-                // Execute component's original rendering setup code first
-                originalOnLoad.call(this, event);
+            // Disconnect old frame tracking loops to prevent memory leaks
+            if (internalDocumentObserver) {
+                internalDocumentObserver.disconnect();
+                internalDocumentObserver = null;
+            }
 
-                try {
-                    const iframe = event.target;
-                    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+            const shadowRootObserver = new MutationObserver(() => {
+                const shadow = targetViewer.shadowRoot;
+                if (!shadow) return;
 
-                    if (iframeDoc) {
-                        const scanForErrors = () => {
-                            if (isReverting) return;
-                            
-                            const text = iframeDoc.body ? iframeDoc.body.innerText : '';
-                            if (text.includes('Archived Page Not Found') || 
-                                text.includes('not found in this archive') || 
-                                text.includes('Sorry, this page was not found')) {
-                                console.warn("Observer intercepted internal 404 error page state.");
-                                revertToSafeState();
+                const iframe = shadow.querySelector('iframe');
+                if (iframe && !internalDocumentObserver) {
+                    console.log("Tracking hook securely bound to the active engine iframe.");
+                    
+                    const monitorIframeContent = () => {
+                        if (isReverting) return;
+                        try {
+                            const frameDoc = iframe.contentDocument || iframe.contentWindow.document;
+                            if (frameDoc && frameDoc.body) {
+                                const bodyText = frameDoc.body.innerText || '';
+                                if (bodyText.includes('Archived Page Not Found') || 
+                                    bodyText.includes('not found in this archive') || 
+                                    bodyText.includes('Sorry, this page was not found')) {
+                                    console.warn("Caught unmapped application state inside frame content.");
+                                    revertToSafeState();
+                                }
                             }
-                        };
+                        } catch (e) {
+                            // Revert on cross-origin security exceptions
+                            revertToSafeState();
+                        }
+                    };
 
-                        // Check instantly upon loading the wrapper frame
-                        scanForErrors();
-
-                        // Use a MutationObserver to watch the Service Worker manipulate the internal document DOM asynchronously
-                        const observer = new MutationObserver(() => {
-                            scanForErrors();
-                        });
-
-                        observer.observe(iframeDoc.documentElement, {
-                            childList: true,
-                            subtree: true
-                        });
+                    // Attach a MutationObserver directly inside the frame context to monitor async service worker updates
+                    try {
+                        const frameDoc = iframe.contentDocument || iframe.contentWindow.document;
+                        if (frameDoc) {
+                            internalDocumentObserver = new MutationObserver(monitorIframeContent);
+                            internalDocumentObserver.observe(frameDoc.documentElement, {
+                                childList: true,
+                                subtree: true
+                            });
+                            // Execute an initial baseline sweep
+                            monitorIframeContent();
+                        }
+                    } catch (err) {
+                        revertToSafeState();
                     }
-                } catch (e) {
-                    // Fallback to safety if strict inner cross-origin security is encountered
-                    revertToSafeState();
                 }
-            };
-            console.log("Internal components successfully patched with structural error protection.");
-        });
+            });
+
+            // Monitor shadow root attachment changes
+            shadowRootObserver.observe(targetViewer, { childList: true, attributes: true });
+            
+            // Force a quick cycle evaluation for pre-rendered frames
+            if (targetViewer.shadowRoot) {
+                const existingIframe = targetViewer.shadowRoot.querySelector('iframe');
+                if (existingIframe) {
+                    try {
+                        const frameDoc = existingIframe.contentDocument || existingIframe.contentWindow.document;
+                        if (frameDoc) {
+                            internalDocumentObserver = new MutationObserver(() => {
+                                if (isReverting) return;
+                                const txt = frameDoc.body ? frameDoc.body.innerText : '';
+                                if (txt.includes('Archived Page Not Found')) revertToSafeState();
+                            });
+                            internalDocumentObserver.observe(frameDoc.documentElement, { childList: true, subtree: true });
+                        }
+                    } catch(e) {}
+                }
+            }
+        }
 
         function dismissNotAvailable() {
             notAvailable.style.display = 'none';
@@ -138,10 +169,15 @@
             const waczUrl = activeItem.getAttribute('data-src');
             const targetUrl = lastGoodUrl || activeItem.getAttribute('data-url');
 
-            // Force-destroy the locked custom component element
+            if (internalDocumentObserver) {
+                internalDocumentObserver.disconnect();
+                internalDocumentObserver = null;
+            }
+
+            // Cleanly remove the locked component instance
             viewer.remove();
 
-            // Rebuild a clean, pristine instance to flush the error state
+            // Spawn a fresh component instance to flush the service worker error pipeline
             const newViewer = document.createElement('replay-web-page');
             newViewer.id = 'sim-viewer';
             newViewer.setAttribute('embed', 'replayonly');
@@ -150,67 +186,47 @@
             newViewer.setAttribute('url', targetUrl);
 
             attachViewerListeners(newViewer);
+            setupShadowTreeTracking(newViewer);
+            
             container.insertBefore(newViewer, notAvailable);
             viewer = newViewer;
 
             setTimeout(() => { isReverting = false; }, 400);
         }
 
-        function checkForNotFound() {
-            if (isReverting) return;
-
-            const shadow = viewer.shadowRoot;
-            if (!shadow) return;
-            const iframe = shadow.querySelector('iframe');
+        function fallbackPollingCheck() {
+            if (isReverting || !viewer || !viewer.shadowRoot) return;
+            const iframe = viewer.shadowRoot.querySelector('iframe');
             if (!iframe) return;
 
-            // --- CHECK 1: Back-up Frame Body Content Scan ---
-            let bodyText = '';
             try {
-                if (iframe.contentDocument && iframe.contentDocument.body) {
-                    bodyText = iframe.contentDocument.body.innerText || '';
+                const frameDoc = iframe.contentDocument || iframe.contentWindow.document;
+                if (frameDoc && frameDoc.body) {
+                    const text = frameDoc.body.innerText || '';
+                    if (text.includes('Archived Page Not Found')) {
+                        revertToSafeState();
+                        return;
+                    }
+                }
+                const currentUrl = iframe.contentWindow.location.href || '';
+                if (currentUrl.includes('__wb_method=POST')) {
+                    revertToSafeState();
                 }
             } catch (e) {
                 revertToSafeState();
-                return;
-            }
-
-            if (bodyText.includes('Archived Page Not Found') || 
-                bodyText.includes('not found in this archive') || 
-                bodyText.includes('Sorry, this page was not found')) {
-                revertToSafeState();
-                return;
-            }
-
-            // --- CHECK 2: Frame Navigation Query Param Scan ---
-            let currentIframeUrl = '';
-            try {
-                if (iframe.contentWindow) {
-                    currentIframeUrl = iframe.contentWindow.location.href || '';
-                }
-            } catch (e) {
-                revertToSafeState();
-                return;
-            }
-
-            if (currentIframeUrl.includes('__wb_method=POST')) {
-                revertToSafeState();
-                return;
             }
         }
 
-        // High frequency polling loop safety valve
-        setInterval(checkForNotFound, 100);
+        // Secondary backup loop running every 150ms
+        setInterval(fallbackPollingCheck, 150);
 
         function attachViewerListeners(element) {
             element.addEventListener('urlchange', (e) => {
                 if (isReverting) return;
-                
                 if (e.detail && e.detail.url) {
                     if (e.detail.url.includes('__wb_method=POST')) {
                         setTimeout(revertToSafeState, 0);
                     } else {
-                        // Store this as our baseline fallback location
                         lastGoodUrl = e.detail.url;
                     }
                 }
@@ -221,8 +237,9 @@
             element.addEventListener('error', (e) => { e.preventDefault(); revertToSafeState(); });
         }
 
-        // Initialize the tracking engine
+        // Initialize the event layers
         attachViewerListeners(viewer);
+        setupShadowTreeTracking(viewer);
 
         menuItems.forEach(item => {
             item.addEventListener('click', () => {
