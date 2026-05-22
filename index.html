@@ -72,7 +72,6 @@
 
         function dismissNotAvailable() {
             notAvailable.style.display = 'none';
-            // Return to the starting page of the active machine
             const activeItem = document.querySelector('.menu-item.active');
             if (activeItem) {
                 viewer.setAttribute('url', activeItem.getAttribute('data-url'));
@@ -101,6 +100,18 @@
         viewer.addEventListener('render-failed', (e) => {
             e.preventDefault();
             notAvailable.style.display = 'block';
+        });
+
+        viewer.addEventListener('urlchange', (e) => {
+            if (e.detail && e.detail.url && e.detail.url.includes('__wb_method=POST')) {
+                notAvailable.style.display = 'block';
+            }
+        });
+
+        viewer.addEventListener('rwp-status', (e) => {
+            if (e.detail && e.detail.status === 'not-found') {
+                notAvailable.style.display = 'block';
+            }
         });
     </script>
 </body>
