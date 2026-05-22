@@ -15,6 +15,8 @@
         #viewer-container { flex-grow: 1; position: relative; }
         #placeholder { display: flex; justify-content: center; align-items: center; height: 100%; color: #666; }
         replay-web-page { width: 100%; height: 100%; display: none; }
+        
+        /* Keeping the fallback modal just in case, but hiding it by default */
         #not-available {
             display: none;
             position: absolute;
@@ -70,51 +72,75 @@
         const placeholder = document.getElementById('placeholder');
         const notAvailable = document.getElementById('not-available');
 
-        // Track the last successfully loaded URL so we can revert to it if a click fails
         let lastGoodUrl = '';
+        let isReverting = false; // Prevents infinite loops if the revert gets stuck
 
         function dismissNotAvailable() {
             notAvailable.style.display = 'none';
-            if (lastGoodUrl) {
-                viewer.setAttribute('url', lastGoodUrl);
-            } else {
-                const activeItem = document.querySelector('.menu-item.active');
-                if (activeItem) {
-                    viewer.setAttribute('url', activeItem.getAttribute('data-url'));
+            revertToSafeState();
+        }
+
+        function revertToSafeState() {
+            if (isReverting) return;
+            isReverting = true;
+            
+            console.warn("Reverting to safe URL:", lastGoodUrl);
+            
+            // Hard-reset the viewer URL to force it to reload the last good state
+            viewer.removeAttribute('url');
+            setTimeout(() => {
+                if (lastGoodUrl) {
+                    viewer.setAttribute('url', lastGoodUrl);
+                } else {
+                    const activeItem = document.querySelector('.menu-item.active');
+                    if (activeItem) viewer.setAttribute('url', activeItem.getAttribute('data-url'));
                 }
-            }
+                
+                setTimeout(() => { isReverting = false; }, 500);
+            }, 50);
         }
 
         function checkForNotFound() {
+            if (isReverting) return;
+
             try {
                 const shadow = viewer.shadowRoot;
                 if (!shadow) return;
                 const iframe = shadow.querySelector('iframe');
-                if (!iframe || !iframe.contentDocument) return;
-                
-                const body = iframe.contentDocument.body;
-                if (body && body.innerText.includes('Archived Page Not Found')) {
-                    // SILENT BLOCK: Instead of showing the modal, auto-revert to the last safe working screen
-                    console.log("Unmapped link clicked! Reverting to last known good page.");
-                    
-                    if (lastGoodUrl) {
-                        viewer.setAttribute('url', lastGoodUrl);
+                if (!iframe) return;
+
+                // 1. Check the active internal URL for the POST error
+                const currentIframeUrl = iframe.contentWindow ? iframe.contentWindow.location.href : '';
+                if (currentIframeUrl.includes('__wb_method=POST')) {
+                    revertToSafeState();
+                    return;
+                }
+
+                // 2. Check the text content just in case the URL didn't update but the DOM did
+                if (iframe.contentDocument && iframe.contentDocument.body) {
+                    const bodyText = iframe.contentDocument.body.innerText || '';
+                    if (bodyText.includes('Archived Page Not Found')) {
+                        revertToSafeState();
                     }
                 }
-            } catch(e) {}
+            } catch(e) {
+                // Cross-origin errors can happen here during transitions, we ignore them
+            }
         }
 
-        // Check for missing pages rapidly (every 100ms instead of 500ms) for a seamless look
+        // Fast interval to catch the flash quickly
         setInterval(checkForNotFound, 100);
 
         menuItems.forEach(item => {
             item.addEventListener('click', () => {
                 menuItems.forEach(i => i.classList.remove('active'));
                 item.classList.add('active');
+                
                 const waczUrl = item.getAttribute('data-src');
                 const startUrl = item.getAttribute('data-url');
                 
-                lastGoodUrl = startUrl; // Base initialization
+                lastGoodUrl = startUrl; 
+                isReverting = false;
                 
                 placeholder.style.display = 'none';
                 notAvailable.style.display = 'none';
@@ -124,32 +150,24 @@
             });
         });
 
-        viewer.addEventListener('warc-copy-failed', (e) => {
-            e.preventDefault();
-            // Optional: comment this out if you never want the error screen to appear
-            notAvailable.style.display = 'block';
-        });
-
-        viewer.addEventListener('render-failed', (e) => {
-            e.preventDefault();
-            notAvailable.style.display = 'block';
-        });
-
         viewer.addEventListener('urlchange', (e) => {
-            console.log('urlchange fired:', JSON.stringify(e.detail));
+            if (isReverting) return;
             
             if (e.detail && e.detail.url) {
-                // If the engine hits a POST action that wasn't mapped
+                // Instantly block if the viewer component registers the POST change
                 if (e.detail.url.includes('__wb_method=POST')) {
-                    if (lastGoodUrl) {
-                        viewer.setAttribute('url', lastGoodUrl);
-                    }
+                    revertToSafeState();
                 } else {
-                    // Cache the current URL as our "safe haven" if it's not a known error route
+                    // It's a safe URL, save it
                     lastGoodUrl = e.detail.url;
                 }
             }
         });
+
+        // Suppress visual errors emitted by the viewer
+        viewer.addEventListener('warc-copy-failed', (e) => { e.preventDefault(); revertToSafeState(); });
+        viewer.addEventListener('render-failed', (e) => { e.preventDefault(); revertToSafeState(); });
+        viewer.addEventListener('error', (e) => { e.preventDefault(); revertToSafeState(); });
     </script>
 </body>
 </html>
