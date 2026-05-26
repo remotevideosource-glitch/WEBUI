@@ -8,44 +8,20 @@
     <style>
         body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; background-color: #f5f5f7; }
         #sidebar { width: 280px; background-color: #1e1e24; color: #fff; display: flex; flex-direction: column; }
-        #sidebar h2 { padding: 20px; margin: 0; font-size: 1.2rem; background-color: #141418; }
+        #sidebar h2 { padding: 20px 20px 10px; margin: 0; font-size: 1.2rem; background-color: #141418; }
+        #sidebar-note { padding: 10px 20px 15px; font-size: 0.75rem; color: #aaa; background-color: #141418; line-height: 1.4; border-bottom: 1px solid #2e2e38; }
         .menu-item { padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #2e2e38; }
         .menu-item:hover { background-color: #2a2a35; }
         .menu-item.active { background-color: #007aff; }
         #viewer-container { flex-grow: 1; position: relative; }
         #placeholder { display: flex; justify-content: center; align-items: center; height: 100%; color: #666; }
         replay-web-page { width: 100%; height: 100%; display: none; }
-        #not-available {
-            display: none;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: #fff;
-            border: 1px solid #ddd;
-            border-radius: 12px;
-            padding: 40px;
-            text-align: center;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-            z-index: 999;
-        }
-        #not-available h2 { margin: 0 0 10px; color: #333; }
-        #not-available p { margin: 0 0 20px; color: #666; }
-        #not-available button {
-            background: #007aff;
-            color: #fff;
-            border: none;
-            padding: 10px 24px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1rem;
-        }
-        #not-available button:hover { background: #005ecb; }
     </style>
 </head>
 <body>
     <div id="sidebar">
         <h2>Device UI Simulators</h2>
+        <div id="sidebar-note">⚠️ Some buttons may not be mapped. If you encounter an error, press your browser's Back button to return.</div>
         <ul class="menu-list">
             <li class="menu-item"
                 data-src="https://remotevideosource-glitch.github.io/WEBUI/sharp-bp-71c31.wacz"
@@ -54,138 +30,31 @@
     </div>
     <div id="viewer-container">
         <div id="placeholder"><h3>Select a machine UI to begin.</h3></div>
-       <replay-web-page 
-  id="sim-viewer" 
-  embed="replayonly" 
-  liveRedirectOnNotFound="false"> 
-</replay-web-page>
-
-        <div id="not-available">
-            <h2>Page Not Available</h2>
-            <p>This page was not captured in the simulator archive.</p>
-            <button onclick="dismissNotAvailable()">Go Back</button>
-        </div>
+        <replay-web-page
+            id="sim-viewer"
+            embed="replayonly">
+        </replay-web-page>
     </div>
     <script>
         const menuItems = document.querySelectorAll('.menu-item');
-        const container = document.getElementById('viewer-container');
+        const viewer = document.getElementById('sim-viewer');
         const placeholder = document.getElementById('placeholder');
-        const notAvailable = document.getElementById('not-available');
-        
-        let viewer = document.getElementById('sim-viewer');
-        let lastGoodUrl = '';
-        let isReverting = false;
-
-        // Continuous state scan engine running every 100ms
-        setInterval(() => {
-            if (isReverting || !viewer) return;
-
-            try {
-                // Safeguard inspection into the web component's shadow DOM root
-                const shadow = viewer.shadowRoot;
-                if (!shadow) return;
-
-                const iframe = shadow.querySelector('iframe');
-                if (!iframe) return;
-
-                const frameWin = iframe.contentWindow;
-                const frameDoc = iframe.contentDocument || (frameWin ? frameWin.document : null);
-
-                if (frameDoc && frameDoc.body) {
-                    const bodyText = frameDoc.body.innerText || '';
-                    const htmlContent = frameDoc.body.innerHTML || '';
-                    const currentUrl = frameWin.location.href || '';
-
-                    // Intercept any unmapped service worker injections or raw POST breakouts
-                    if (bodyText.includes('Archived Page Not Found') || 
-                        bodyText.includes('not found in this archive') || 
-                        htmlContent.includes('__wb_method=POST') ||
-                        currentUrl.includes('__wb_method=POST')) {
-                        
-                        console.warn("State engine caught unmapped routing error inside container scope.");
-                        revertToSafeState();
-                    }
-                }
-            } catch (err) {
-                // Auto-revert safely if browser sandbox barriers (cross-origin exceptions) are triggered
-                revertToSafeState();
-            }
-        }, 100);
-
-        function dismissNotAvailable() {
-            notAvailable.style.display = 'none';
-            revertToSafeState();
-        }
-
-        function revertToSafeState() {
-            if (isReverting) return;
-            isReverting = true;
-            
-            const activeItem = document.querySelector('.menu-item.active');
-            if (!activeItem) { isReverting = false; return; }
-
-            const waczUrl = activeItem.getAttribute('data-src');
-            const targetUrl = lastGoodUrl || activeItem.getAttribute('data-url');
-
-            console.warn("Purging locked frame. Restoring pristine environment view:", targetUrl);
-            
-            // Instantly delete the frozen custom element component from the live DOM
-            viewer.remove();
-
-            // Rebuild a clean component instance from scratch to refresh the reader thread pipeline
-            const newViewer = document.createElement('replay-web-page');
-            newViewer.id = 'sim-viewer';
-            newViewer.setAttribute('embed', 'replayonly');
-            newViewer.style.display = 'block';
-            newViewer.setAttribute('source', waczUrl);
-            newViewer.setAttribute('url', targetUrl);
-
-            attachViewerListeners(newViewer);
-            container.insertBefore(newViewer, notAvailable);
-            viewer = newViewer;
-
-            setTimeout(() => { isReverting = false; }, 400);
-        }
-
-        function attachViewerListeners(element) {
-            element.addEventListener('urlchange', (e) => {
-                if (isReverting) return;
-                if (e.detail && e.detail.url) {
-                    const targetUrl = e.detail.url;
-                    if (targetUrl.includes('__wb_method=POST')) {
-                        setTimeout(revertToSafeState, 0);
-                    } else {
-                        // Store known good working URL path to return to
-                        lastGoodUrl = targetUrl;
-                    }
-                }
-            });
-
-            element.addEventListener('warc-copy-failed', (e) => { e.preventDefault(); revertToSafeState(); });
-            element.addEventListener('render-failed', (e) => { e.preventDefault(); revertToSafeState(); });
-            element.addEventListener('error', (e) => { e.preventDefault(); revertToSafeState(); });
-        }
-
-        attachViewerListeners(viewer);
 
         menuItems.forEach(item => {
             item.addEventListener('click', () => {
                 menuItems.forEach(i => i.classList.remove('active'));
                 item.classList.add('active');
-                
                 const waczUrl = item.getAttribute('data-src');
                 const startUrl = item.getAttribute('data-url');
-                
-                lastGoodUrl = startUrl; 
-                isReverting = false;
-                
                 placeholder.style.display = 'none';
-                notAvailable.style.display = 'none';
                 viewer.style.display = 'block';
                 viewer.setAttribute('source', waczUrl);
                 viewer.setAttribute('url', startUrl);
             });
         });
+
+        viewer.addEventListener('warc-copy-failed', (e) => e.preventDefault());
+        viewer.addEventListener('render-failed', (e) => e.preventDefault());
     </script>
 </body>
 </html>
