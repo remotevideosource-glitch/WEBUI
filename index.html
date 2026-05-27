@@ -4,57 +4,56 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Technician Web UI Simulator Hub</title>
-    <script src="./ui.js"></script>
     <style>
         body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; background-color: #f5f5f7; }
         #sidebar { width: 280px; background-color: #1e1e24; color: #fff; display: flex; flex-direction: column; }
         #sidebar h2 { padding: 20px 20px 10px; margin: 0; font-size: 1.2rem; background-color: #141418; }
         #sidebar-note { padding: 10px 20px 15px; font-size: 0.75rem; color: #aaa; background-color: #141418; line-height: 1.4; border-bottom: 1px solid #2e2e38; }
-        .menu-item { padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #2e2e38; }
+        .menu-item { padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #2e2e38; list-style: none; }
         .menu-item:hover { background-color: #2a2a35; }
         .menu-item.active { background-color: #007aff; }
         #viewer-container { flex-grow: 1; position: relative; }
         #placeholder { display: flex; justify-content: center; align-items: center; height: 100%; color: #666; }
-        replay-web-page { width: 100%; height: 100%; display: none; }
+        #sim-frame { width: 100%; height: 100%; border: none; display: none; }
     </style>
 </head>
 <body>
     <div id="sidebar">
         <h2>Device UI Simulators</h2>
-        <div id="sidebar-note">⚠️ Some buttons may not be mapped. If you encounter an error, press your browser's Back button to return.</div>
-        <ul class="menu-list">
-            <li class="menu-item"
-                data-src="https://remotevideosource-glitch.github.io/WEBUI/sharp-bp-71c31.wacz"
-                data-url="http://10.1.16.241/main.html">Sharp BP-71C31</li>
+        <div id="sidebar-note">Select a machine to launch the simulator.</div>
+        <ul class="menu-list" style="padding: 0; margin: 0;">
+            <li class="menu-item" data-src="sharp-bp-71-c31.html">Sharp BP-71C31</li>
         </ul>
     </div>
+    
     <div id="viewer-container">
         <div id="placeholder"><h3>Select a machine UI to begin.</h3></div>
-        <replay-web-page
-            id="sim-viewer"
-            embed="replayonly">
-        </replay-web-page>
+        <iframe id="sim-frame" src=""></iframe>
     </div>
+
     <script>
+        // Clean up old Service Workers in case users visited the old version
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+                for (let registration of registrations) registration.unregister();
+            });
+        }
+
         const menuItems = document.querySelectorAll('.menu-item');
-        const viewer = document.getElementById('sim-viewer');
+        const frame = document.getElementById('sim-frame');
         const placeholder = document.getElementById('placeholder');
 
         menuItems.forEach(item => {
             item.addEventListener('click', () => {
                 menuItems.forEach(i => i.classList.remove('active'));
                 item.classList.add('active');
-                const waczUrl = item.getAttribute('data-src');
-                const startUrl = item.getAttribute('data-url');
+                
+                const targetUrl = item.getAttribute('data-src');
                 placeholder.style.display = 'none';
-                viewer.style.display = 'block';
-                viewer.setAttribute('source', waczUrl);
-                viewer.setAttribute('url', startUrl);
+                frame.style.display = 'block';
+                frame.src = targetUrl;
             });
         });
-
-        viewer.addEventListener('warc-copy-failed', (e) => e.preventDefault());
-        viewer.addEventListener('render-failed', (e) => e.preventDefault());
     </script>
 </body>
 </html>
