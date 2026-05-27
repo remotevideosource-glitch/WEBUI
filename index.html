@@ -5,33 +5,32 @@
 <body>
     <div id="sidebar">
         <h2>Device UI Simulators</h2>
-        <ul class="menu-list">
-            <li class="menu-item" onclick="loadSimulator()">Sharp BP-71C31</li>
+        <ul>
+            <li class="menu-item" onclick="loadSharpSimulator()">Sharp BP-71C31</li>
         </ul>
     </div>
     
     <div id="viewer-container">
-        <iframe id="sim-frame"></iframe>
+        <iframe id="sim-frame" src="about:blank"></iframe>
     </div>
 
     <script>
-        // PASTE THE ENTIRE CONTENTS OF sharp-bp-71-c31.html INSIDE THESE BACKTICKS
-        const SHARP_SIMULATOR_CODE = `
+        // 1. THIS IS THE VARIABLE
+        // Use backticks (`) to start and end the string.
+        const SIMULATOR_HTML = `
             <!DOCTYPE html>
             <html lang="en-us">
-            <head>
-               </head>
-            <body>
-               </body>
             </html>
         `;
 
-        function loadSimulator() {
+        // 2. THIS IS THE FUNCTION
+        function loadSharpSimulator() {
             const frame = document.getElementById('sim-frame');
             frame.style.display = 'block';
             
-            // This is the magic: loading the string directly into the iframe
-            frame.srcdoc = SHARP_SIMULATOR_CODE;
+            // This 'srcdoc' property tells the iframe to render the string 
+            // as if it were a full HTML document.
+            frame.srcdoc = SIMULATOR_HTML;
         }
     </script>
 </body>
