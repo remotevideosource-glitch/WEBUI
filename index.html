@@ -1,37 +1,61 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    </head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Technician Web UI Simulator Hub</title>
+    <style>
+        body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; background-color: #f5f5f7; }
+        #sidebar { width: 280px; background-color: #1e1e24; color: #fff; display: flex; flex-direction: column; }
+        #sidebar h2 { padding: 20px 20px 10px; margin: 0; font-size: 1.2rem; background-color: #141418; }
+        #sidebar-note { padding: 10px 20px 15px; font-size: 0.75rem; color: #aaa; background-color: #141418; line-height: 1.4; border-bottom: 1px solid #2e2e38; }
+        .menu-item { padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #2e2e38; list-style: none; }
+        .menu-item:hover { background-color: #2a2a35; }
+        .menu-item.active { background-color: #007aff; }
+        #viewer-container { flex-grow: 1; position: relative; }
+        #placeholder { display: flex; justify-content: center; align-items: center; height: 100%; color: #666; }
+        #sim-frame { width: 100%; height: 100%; border: none; display: none; }
+    </style>
+</head>
 <body>
+
     <div id="sidebar">
         <h2>Device UI Simulators</h2>
-        <ul>
+        <div id="sidebar-note">Select a machine to launch the simulator.</div>
+        <ul class="menu-list" style="padding: 0; margin: 0;">
             <li class="menu-item" onclick="loadSharpSimulator()">Sharp BP-71C31</li>
         </ul>
     </div>
     
     <div id="viewer-container">
-        <iframe id="sim-frame" src="about:blank"></iframe>
+        <div id="placeholder"><h3>Select a machine UI to begin.</h3></div>
+        <iframe id="sim-frame"></iframe>
     </div>
 
-    <script>
-        // 1. THIS IS THE VARIABLE
-        // Use backticks (`) to start and end the string.
-        const SIMULATOR_HTML = `
-            <!DOCTYPE html>
-            <html lang="en-us">
-            </html>
-        `;
+    <script type="text/plain" id="simulator-source">
+        </script>
 
-        // 2. THIS IS THE FUNCTION
+    <script>
         function loadSharpSimulator() {
-            const frame = document.getElementById('sim-frame');
-            frame.style.display = 'block';
+            // 1. Get the raw code from the script tag above
+            const rawContent = document.getElementById('simulator-source').text;
             
-            // This 'srcdoc' property tells the iframe to render the string 
-            // as if it were a full HTML document.
-            frame.srcdoc = SIMULATOR_HTML;
+            // 2. Create a "Blob" (a virtual file in memory)
+            const blob = new Blob([rawContent], {type: 'text/html'});
+            
+            // 3. Create a temporary URL and point the iframe to it
+            const url = URL.createObjectURL(blob);
+            const frame = document.getElementById('sim-frame');
+            
+            frame.src = url;
+            frame.style.display = 'block';
+            document.getElementById('placeholder').style.display = 'none';
+
+            // Visual indicator
+            document.querySelectorAll('.menu-item').forEach(i => i.classList.remove('active'));
+            event.target.classList.add('active');
         }
     </script>
+
 </body>
 </html>
